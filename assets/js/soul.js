@@ -25,6 +25,21 @@
     syncPh();
   });
 
+  // ---- demo bar: demo images on or off (his ask, 7 Nov 2026), kept on this device like the placeholders.
+  // Off, every demo photo and video gives way to its empty template (soul.css, html.demo-off).
+  function syncDemo() {
+    var state = root.classList.contains('demo-off') ? 'off' : 'on';
+    $$('[data-set="demo"]').forEach(function (b) { b.setAttribute('aria-pressed', String(b.dataset.val === state)); });
+  }
+  syncDemo();
+  document.addEventListener('click', function (e) {
+    var b = e.target.closest && e.target.closest('[data-set="demo"]');
+    if (!b) return;
+    root.classList.toggle('demo-off', b.dataset.val === 'off');
+    try { localStorage.setItem('sbp-demo', b.dataset.val); } catch (err) { /* private mode */ }
+    syncDemo();
+  });
+
   // ---- floating stickers. Each [data-float] box bobs (sin, 7 px), sways (data-wobble degrees),
   // and, when it has data-depth, leans with the mouse and drifts up as the page scrolls.
   // Only boxes on screen are moved; the loop stops when none are.
@@ -438,7 +453,7 @@
 
   // ---- mobile menu and the sticky book bar
   var menuBtn = $('.nav__menu'), menu = $('#menu'), sticky = $('.sticky'), book = $('#book');
-  var menuOpen = false, bookIn = false, checkIn = false;
+  var menuOpen = false, bookIn = false, checkIn = false, navWake = null;
   var updateSticky = function () {
     if (!sticky) return;
     sticky.classList.toggle('is-on', window.scrollY > 640 && !bookIn && !checkIn && !menuOpen);
@@ -450,6 +465,7 @@
     menuBtn.setAttribute('aria-expanded', String(open));
     menuBtn.textContent = open ? menuBtn.getAttribute('data-close') : menuBtn.getAttribute('data-open');
     updateSticky();
+    if (open && navWake) navWake();
     if (!open && focusBack) menuBtn.focus();
   };
   if (menuBtn && menu) {
@@ -462,6 +478,111 @@
       if (wide.addEventListener) wide.addEventListener('change', onWide); else if (wide.addListener) wide.addListener(onWide);
     }
   }
+  // ---- the top bar, the capsule (7 Nov 2026, evening). His ask: "kun scrollaa alas niin se menee pieneksi ...
+  // ja sitten ylös niin laajenee taas. tasokas"; of the two demos he chose "A kapseli". The bar sticks at the
+  // top like a sticky element. Scrolling down draws it into a capsule in the middle with the sb. icon and the
+  // book button (is-small); scrolling up opens it, and so do keyboard focus, a tap on the shape and the menu.
+  // The shape is two layers that meet in the middle: this sets their edges; content moves by transform only.
+  var navBox = $('.navbox'), navFloat = navBox && $('.navfloat', navBox);
+  var navEl = navFloat && $('.nav, .spnav', navFloat);
+  if (navBox && navFloat && navEl) {
+    var isSub = navEl.classList.contains('spnav');
+    var FIX = isSub ? 14 : 8;               // the bar's top once it floats (the navfloat's padding-top)
+    var SC = .92;                           // the book or menu button when the bar is small
+    var bgL = $('.nav__bgl', navEl), bgR = $('.nav__bgr', navEl);
+    var brandEl = $('.brand, .spnav__brand', navEl), iconEl = $('.sbi', navEl);
+    var bookEl = $('.nav__book, .spnav__book', navEl), menuEl = $('.nav__menu', navEl);
+    var linkEls = $$('.nav__links a, .spnav__links a', navEl), mid = (linkEls.length - 1) / 2;
+    linkEls.forEach(function (a, i) {           // the links come back from the middle out
+      a.style.setProperty('--i', String(Math.abs(i - mid)));
+    });
+    var inOff = 0, lastY = window.scrollY, acc = 0, navRaf = 0, hover = false, leaveT = 0, wentDown = false, g = null;
+    var fine = window.matchMedia && matchMedia('(hover: hover) and (pointer: fine)').matches;
+    var shown = function (el) { return !!el && getComputedStyle(el).display !== 'none'; };
+    var measure = function () {
+      if (!navBox.classList.contains('is-floating')) {
+        navBox.style.height = '';
+        navBox.style.height = navBox.offsetHeight + 'px';
+        inOff = navEl.getBoundingClientRect().top - navBox.getBoundingClientRect().top;
+      }
+      var act = shown(bookEl) ? bookEl : menuEl, r = navEl.getBoundingClientRect();
+      g = { W: navEl.clientWidth, vl: r.left, vr: document.documentElement.clientWidth - r.right,
+            bl: brandEl.offsetLeft, iw: iconEl ? iconEl.offsetWidth : brandEl.offsetWidth,
+            act: act, al: act.offsetLeft, aw: act.offsetWidth };
+      if (bookEl && act !== bookEl) bookEl.style.transform = '';
+      if (menuEl && act !== menuEl) menuEl.style.transform = '';
+    };
+    var box = function (el, l, r, t, b, rad) {
+      var s = el.style;
+      s.left = l + 'px'; s.right = r + 'px'; s.top = t + 'px'; s.bottom = b + 'px'; s.borderRadius = rad;
+    };
+    var apply = function () {
+      if (!g) measure();
+      var small = navBox.classList.contains('is-floating') && navBox.classList.contains('is-small');
+      var W = g.W, half = Math.round(W / 2), bs = brandEl.style, as = g.act.style;
+      if (!small) {                           // open: the home's pill, or a bar from edge to edge on a sub-page
+        var o = isSub ? 0 : 999, t0 = isSub ? -FIX : 0, l0 = isSub ? -g.vl : 0, r0 = isSub ? -g.vr : 0;
+        box(bgL, l0, W - half - 1, t0, t0, o + 'px 0 0 ' + o + 'px');
+        box(bgR, half - 1, r0, t0, t0, '0 ' + o + 'px ' + o + 'px 0');
+        bs.transform = ''; as.transform = '';
+        return;
+      }
+      var ts = isSub ? -4 : 4, rad = 26;      // small: 52 px tall on every page
+      var padL = 16, gap = 12, padR = 6;     // the capsule: the sb. icon and the button, centred
+      var capW = padL + g.iw + gap + g.aw * SC + padR, capL = Math.round((W - capW) / 2), capR = Math.round(capL + capW);
+      box(bgL, capL, W - half - 1, ts, ts, rad + 'px 0 0 ' + rad + 'px');
+      box(bgR, half - 1, W - capR, ts, ts, '0 ' + rad + 'px ' + rad + 'px 0');
+      bs.transform = 'translateX(' + (capL + padL - g.bl) + 'px)';
+      as.transform = 'translateX(' + (capR - padR - g.al - g.aw) + 'px) scale(' + SC + ')';
+    };
+    var setSmall = function (on) {
+      if (navBox.classList.contains('is-small') === on) return;
+      navBox.classList.toggle('is-small', on);
+      apply();
+    };
+    var navTick = function () {
+      navRaf = 0;
+      var y = window.scrollY, dy = y - lastY;
+      lastY = y;
+      var top = navBox.getBoundingClientRect().top + inOff;
+      var floating = navBox.classList.contains('is-floating');
+      if (!floating && top <= FIX) {
+        navBox.classList.add('is-floating'); floating = true; apply();
+      } else if (floating && top > FIX) {
+        navBox.classList.remove('is-floating', 'is-small'); floating = false; apply();
+      }
+      if (!floating) { acc = 0; return; }
+      if (dy && (dy > 0) !== (acc > 0)) acc = 0;
+      acc += dy;
+      if (acc > 12) { wentDown = true; if (!menuOpen && !hover) setSmall(true); }
+      else if (acc < -12) { wentDown = false; setSmall(false); }
+    };
+    navWake = function () { setSmall(false); };
+    if (fine) {                               // the bar never changes under the pointer; hover does not open the
+      navEl.addEventListener('pointerover', function () {   // capsule, or the button would run from the pointer
+        hover = true; clearTimeout(leaveT);
+      });
+      navEl.addEventListener('pointerout', function (e) {
+        if (e.relatedTarget && navEl.contains(e.relatedTarget)) return;
+        hover = false; clearTimeout(leaveT);
+        leaveT = setTimeout(function () {
+          if (wentDown && !menuOpen && navBox.classList.contains('is-floating') && !navEl.contains(document.activeElement)) setSmall(true);
+        }, 600);
+      });
+    }
+    navEl.addEventListener('focusin', function (e) {   // the keyboard opens it; a mouse click must not move the button
+      var kb = true;
+      try { kb = e.target.matches(':focus-visible'); } catch (err) { /* older browsers: open it */ }
+      if (kb) setSmall(false);
+    });
+    [bgL, bgR].forEach(function (el) { el.addEventListener('click', function () { setSmall(false); }); });
+    measure(); apply();
+    window.addEventListener('resize', function () { g = null; measure(); apply(); });
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(function () { g = null; measure(); apply(); });
+    window.addEventListener('scroll', function () { if (!navRaf) navRaf = requestAnimationFrame(navTick); }, { passive: true });
+    navTick();
+  }
+
   var checkBox = $('.pcheck');   // the check has its own book and send buttons; the bar would cover them
   if (checkBox && hasIO) {
     new IntersectionObserver(function (entries) { checkIn = entries[0].isIntersecting; updateSticky(); }).observe(checkBox);
